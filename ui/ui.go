@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/caiovfernandes/terragrunt-runner/terragrunt"
 	"github.com/charmbracelet/bubbles/list"
@@ -10,6 +11,15 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
+)
+
+type status int
+
+var (
+	columnStyle  = lipgloss.NewStyle().Padding(1, 2)
+	focusedStyle = lipgloss.NewStyle().Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#FF00FF"))
+
+	models []tea.Model
 )
 
 const (
@@ -24,7 +34,16 @@ type Item struct {
 	path          string
 	content       string
 	lastExecution string
+	cursor        int
+	choice        string
 }
+
+type views int
+
+const (
+	filter views = iota
+	main
+)
 
 func (i Item) Title() string       { return i.title }
 func (i Item) Description() string { return i.description }
@@ -36,6 +55,7 @@ type Model struct {
 	tfViewPort       viewport.Model
 	viewportRenderer *glamour.TermRenderer
 	planView         bool
+	focused          views
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -103,40 +123,62 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) View() string {
-	currentItem := m.list.SelectedItem()
-	var codeStr string
-	var err error
-	//if m.planView {
-	//	codeStr, err = m.viewportRenderer.Render(string(currentItem.(Item).lastExecution))
-	//} else {
-	//	codeStr, err = m.viewportRenderer.Render(currentItem.(Item).content)
-	//}
 
-	codeStr, err = m.viewportRenderer.Render(currentItem.(Item).content)
-	tfRunStr, err := m.viewportRenderer.Render(currentItem.(Item).lastExecution)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+	if m.focused == filter {
+		s := strings.Builder{}
+		s.WriteString("What kind of Bubble Tea would you like to order?\n\n")
+
+		for i := 0; i < len(choices); i++ {
+			if m.cursor == i {
+				s.WriteString("(•) ")
+			} else {
+				s.WriteString("( ) ")
+			}
+			s.WriteString(choices[i])
+			s.WriteString("\n")
+		}
+		s.WriteString("\n(press q to quit)\n")
+
+		return s.String()
 	}
-	m.codeViewPort.SetContent(codeStr)
-	m.tfViewPort.SetContent(tfRunStr)
-	return lipgloss.JoinHorizontal(
-		lipgloss.Center,
-		m.list.View(),
-		m.codeViewPort.View(),
-		m.tfViewPort.View(),
-	)
+	if m.focused == main {
+
+		currentItem := m.list.SelectedItem()
+		var codeStr string
+		var err error
+		//if m.planView {
+		//	codeStr, err = m.viewportRenderer.Render(string(currentItem.(Item).lastExecution))
+		//} else {
+		//	codeStr, err = m.viewportRenderer.Render(currentItem.(Item).content)
+		//}
+
+		codeStr, err = m.viewportRenderer.Render(currentItem.(Item).content)
+		tfRunStr, err := m.viewportRenderer.Render(currentItem.(Item).lastExecution)
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(1)
+		}
+		m.codeViewPort.SetContent(codeStr)
+		m.tfViewPort.SetContent(tfRunStr)
+		return lipgloss.JoinHorizontal(
+			lipgloss.Center,
+			m.list.View(),
+			m.codeViewPort.View(),
+			m.tfViewPort.View(),
+		)
+	}
+	return ""
 }
 
 func Start() {
-	projects, err := terragrunt.GetProjects()
+	workspace, err := terragrunt.GetWorkspace()
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
 
 	var items []list.Item
-	for projectName, project := range projects {
+	for projectName, project := range workspace.Projects {
 		for regionName, region := range project.Regions {
 			for stackName, stack := range region.Stacks {
 				for _, file := range stack.Files {
@@ -156,12 +198,7 @@ func Start() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	m := Model{
-		list:             list.New(items, list.NewDefaultDelegate(), 0, 0),
-		codeViewPort:     viewPortModel,
-		viewportRenderer: renderer,
-		tfViewPort:       viewPortModel,
-	}
+	m := Model{list: list.New(items, list.NewDefaultDelegate(), 0, 0), codeViewPort: viewPortModel, viewportRenderer: renderer, tfViewPort: viewPortModel}
 	m.list.Title = "Terragrunt Files"
 	p := tea.NewProgram(&m, tea.WithAltScreen())
 
