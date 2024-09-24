@@ -2,21 +2,20 @@ package ui
 
 import (
 	"fmt"
+	"github.com/charmbracelet/bubbles/textarea"
+	"os"
+
 	"github.com/caiovfernandes/terragrunt-runner/terragrunt"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"os"
-	"os/exec"
 )
 
-type terragruntFinishedMsg struct{ err error }
-
-const initialContent = `
-# Terragrunt Runner
-`
+const (
+	initialContent string = "# Terragrunt Runner"
+)
 
 var docStyle = lipgloss.NewStyle().Margin(1, 2)
 
@@ -34,35 +33,19 @@ func (i Item) FilterValue() string { return i.title }
 
 type Model struct {
 	list             list.Model
-	viewport         viewport.Model
+	codeViewPort     viewport.Model
+	tfViewPort       viewport.Model
 	viewportRenderer *glamour.TermRenderer
 	planView         bool
-	planOutputReady  bool
+	textarea         textarea.Model
 }
 
 func (m *Model) Init() tea.Cmd {
 	return nil
 }
 
-func (m *Model) bubbleteaExec() tea.Cmd {
-	cmd := exec.Command("terragrunt", "init")
-
-	// Set the working directory
-	cmd.Dir = "/home/caio/projects/prophecy/aws-prophecy-emite-infra/workspaces/prophecy-prod/us-east-2/elasticbeanstalk/environments/sgws"
-
-	//out, err := cmd.CombinedOutput()
-	//if err != nil {
-	//	log.Fatalf("command failed: %v", err)
-	//}
-
-	//currentItem := m.list.SelectedItem().(Item)
-	//currentItem.lastExecution = string(out)
-	return tea.ExecProcess(cmd, func(err error) tea.Msg {
-		return terragruntFinishedMsg{err}
-	})
-}
 func newDefaultViewPort() (viewport.Model, *glamour.TermRenderer, error) {
-	vp := viewport.New(85, 27)
+	vp := viewport.New(100, 27)
 	vp.Style = lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("62")).
@@ -91,45 +74,60 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-
 		if msg.String() == "enter" {
-			return m, m.bubbleteaExec()
+			currentItem := m.list.SelectedItem()
+			item := currentItem.(Item)
+			item.lastExecution = "Running terraform"
+			m.list.SetItem(m.list.Index(), item)
+
+			return m, runTerraformInit(item, m.list.Index())
 		}
 		if msg.String() == "n" {
-			m.planView = true
+			if m.planView {
+				m.planView = false
+			} else {
+				m.planView = true
+			}
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
 		m.list.SetSize(msg.Width-h, msg.Height-v)
+		m.codeViewPort.Height = msg.Height - h
+	case terraformInitMsg:
+		item := m.list.Items()[msg.Index].(Item)
+		item.lastExecution = msg.Output // Assuming we add a method to set this value
+		m.list.SetItem(msg.Index, item)
+		m.textarea.SetValue(msg.Output)
 	}
-
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
 	return m, cmd
 }
 
 func (m *Model) View() string {
-	// return docStyle.Render(m.list.View())
-	// viewportView := viewport.Model{}
-
 	currentItem := m.list.SelectedItem()
-	var str string
+	var codeStr string
 	var err error
-	if m.planView {
-		str, err = m.viewportRenderer.Render(currentItem.(Item).lastExecution)
-	} else {
-		str, err = m.viewportRenderer.Render(currentItem.(Item).content)
-	}
+	//if m.planView {
+	//	codeStr, err = m.viewportRenderer.Render(string(currentItem.(Item).lastExecution))
+	//} else {
+	//	codeStr, err = m.viewportRenderer.Render(currentItem.(Item).content)
+	//}
 
+	codeStr, err = m.viewportRenderer.Render(currentItem.(Item).content)
+	tfRunStr, err := m.viewportRenderer.Render(currentItem.(Item).lastExecution)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	m.viewport.SetContent(str)
+	m.codeViewPort.SetContent(codeStr)
+	m.tfViewPort.SetContent(tfRunStr)
 	return lipgloss.JoinHorizontal(
-		lipgloss.Left,
+		lipgloss.Center,
 		m.list.View(),
-		m.viewport.View(),
+		m.codeViewPort.View(),
+		m.tfViewPort.View(),
+		m.textarea.View(),
 	)
 }
 
@@ -161,12 +159,32 @@ func Start() {
 		fmt.Println(err)
 		os.Exit(1)
 	}
-	m := Model{list: list.New(items, list.NewDefaultDelegate(), 0, 0), viewport: viewPortModel, viewportRenderer: renderer}
+	m := Model{
+		list:             list.New(items, list.NewDefaultDelegate(), 0, 0),
+		codeViewPort:     viewPortModel,
+		viewportRenderer: renderer,
+		tfViewPort:       viewPortModel,
+		textarea:         textarea.New(),
+	}
 	m.list.Title = "Terragrunt Files"
 	p := tea.NewProgram(&m, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Println("Error running program:", err)
 		os.Exit(1)
+	}
+}
+
+type terraformInitMsg struct {
+	Output string
+	Item   Item
+	Index  int
+	Error  error
+}
+
+func runTerraformInit(item Item, itemPosition int) tea.Cmd {
+	return func() tea.Msg {
+		output, err := terragrunt.RunTerraformInit(item.path)
+		return terraformInitMsg{Output: output, Item: item, Index: itemPosition, Error: err}
 	}
 }

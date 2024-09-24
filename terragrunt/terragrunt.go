@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 )
@@ -158,4 +159,23 @@ func getFileContent(file_path string) (string, error) {
 		return "", err
 	}
 	return string(content), nil
+}
+
+func RunTerraformInit(rootDir string) (string, error) {
+	cmd := exec.Command("terragrunt", "plan", "--terragrunt-forward-tf-stdout", "--terragrunt-non-interactive", "--terragrunt-log-level error", "--terragrunt-log-disable")
+	cmd.Dir = "/Users/caiofernandes/projects/prophecy/code/aws-prophecy-emite-infra/workspaces/prophecy-dev/ap-southeast-2/alb/emite-alb/"
+	outputBytes, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(outputBytes), err
+	}
+	//output := string(outputBytes)
+	output := cmd.String()
+
+	// Save output to a file
+	//outputFile := filepath.Join(cmd.Dir, "output")
+	//if err := ioutil.WriteFile(outputFile, []byte(output), 0644); err != nil {
+	//	return output, fmt.Errorf("failed to save output to file: %v", err)
+	//}
+
+	return output, nil
 }

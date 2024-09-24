@@ -1,4 +1,4 @@
-package utils
+package main
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ func main() {
 	cmd := exec.Command("terragrunt", "plan")
 
 	// Set the working directory
-	cmd.Dir = "/home/caio/projects/prophecy/aws-prophecy-emite-infra/workspaces/prophecy-prod/us-east-2/elasticbeanstalk/environments/sgws"
+	cmd.Dir = "/Users/caiofernandes/projects/prophecy/code/aws-prophecy-emite-infra/workspaces/"
 
 	// Set the output to the standard output and error
 	cmd.Stdout = os.Stdout
