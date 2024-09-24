@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"github.com/charmbracelet/bubbles/textarea"
 	"os"
 
 	"github.com/caiovfernandes/terragrunt-runner/terragrunt"
@@ -37,7 +36,6 @@ type Model struct {
 	tfViewPort       viewport.Model
 	viewportRenderer *glamour.TermRenderer
 	planView         bool
-	textarea         textarea.Model
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -91,13 +89,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.WindowSizeMsg:
 		h, v := docStyle.GetFrameSize()
-		m.list.SetSize(msg.Width-h, msg.Height-v)
+		m.list.SetSize(msg.Width, msg.Height-v)
 		m.codeViewPort.Height = msg.Height - h
+		m.tfViewPort.Height = msg.Height - h
 	case terraformInitMsg:
 		item := m.list.Items()[msg.Index].(Item)
-		item.lastExecution = msg.Output // Assuming we add a method to set this value
+		item.lastExecution = "# Output:\n\n```shell" + msg.Output + "```\n # StdErr:\n " + msg.Error.Error() // Assuming we add a method to set this value
 		m.list.SetItem(msg.Index, item)
-		m.textarea.SetValue(msg.Output)
 	}
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
@@ -127,7 +125,6 @@ func (m *Model) View() string {
 		m.list.View(),
 		m.codeViewPort.View(),
 		m.tfViewPort.View(),
-		m.textarea.View(),
 	)
 }
 
@@ -164,7 +161,6 @@ func Start() {
 		codeViewPort:     viewPortModel,
 		viewportRenderer: renderer,
 		tfViewPort:       viewPortModel,
-		textarea:         textarea.New(),
 	}
 	m.list.Title = "Terragrunt Files"
 	p := tea.NewProgram(&m, tea.WithAltScreen())
