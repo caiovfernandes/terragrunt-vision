@@ -11,63 +11,44 @@ import (
 )
 
 type File struct {
-	Path    string
-	Content string
+	Path      string
+	Content   string
+	RegionID  string
+	ProjectID string
+	StackID   string
 }
 
-type Stack struct {
-	Files []File
-}
-
-type Region struct {
-	Stacks map[string]Stack
+type Workspace struct {
+	Projects map[string]*Project
 }
 
 type Project struct {
-	Regions map[string]Region
+	Name    string
+	Regions map[string]*Region
 }
 
-type Root struct {
-	Projects map[string]Project
+type Region struct {
+	Name   string
+	Stacks map[string]*Stack
 }
 
-func (root *Root) addFileToHierarchy(filePath string) {
-	baseFolder := "workspaces"
+type Stack struct {
+	Name  string
+	Files []File
+}
 
-	pathParts := strings.Split(filePath, "/")
-	baseIdx := -1
-	for i, part := range pathParts {
-		if part == baseFolder {
-			baseIdx = i
-			break
-		}
-	}
+const baseFolder = "workspaces"
+const minPathPartsLength = 4
 
-	if baseIdx == -1 || len(pathParts) < baseIdx+4 {
+func (h *Workspace) addFileToHierarchy(filePath string) {
+	pathParts, baseIndex := extractPathParts(filePath, baseFolder)
+	if baseIndex == -1 || len(pathParts) < baseIndex+minPathPartsLength {
 		fmt.Printf("Skipping malformed path: %s\n", filePath)
 		return
 	}
 
-	projectName := pathParts[baseIdx+1] // e.g., prophecy-dev
-	regionName := pathParts[baseIdx+2]  // e.g., ap-southeast-2
-	stackName := pathParts[baseIdx+3]   // e.g., acm, alb, etc.
-
-	project, projectExists := root.Projects[projectName]
-	if !projectExists {
-		project = Project{Regions: make(map[string]Region)}
-		root.Projects[projectName] = project
-	}
-
-	region, regionExists := project.Regions[regionName]
-	if !regionExists {
-		region = Region{Stacks: make(map[string]Stack)}
-		project.Regions[regionName] = region
-	}
-
-	stack, stackExists := region.Stacks[stackName]
-	if !stackExists {
-		stack = Stack{}
-	}
+	projectName, regionName, stackName := pathParts[baseIndex+1], pathParts[baseIndex+2], pathParts[baseIndex+3]
+	_, _, stack := h.fetchOrCreateHierarchy(projectName, regionName, stackName)
 
 	content, err := getFileContent(filePath)
 	if err != nil {
@@ -75,14 +56,57 @@ func (root *Root) addFileToHierarchy(filePath string) {
 		return
 	}
 
-	stack.Files = append(stack.Files, File{Path: filePath, Content: content})
-	region.Stacks[stackName] = stack
-	project.Regions[regionName] = region
-	root.Projects[projectName] = project
+	stack.Files = append(stack.Files, File{Path: filePath, Content: content, RegionID: regionName, ProjectID: projectName, StackID: stackName})
 }
 
-func (root *Root) PrintHierarchy() {
-	for projectName, project := range root.Projects {
+func extractPathParts(filePath, baseFolder string) ([]string, int) {
+	pathParts := strings.Split(filePath, "/")
+	baseIndex := -1
+	for i, part := range pathParts {
+		if part == baseFolder {
+			baseIndex = i
+			break
+		}
+	}
+	return pathParts, baseIndex
+}
+
+func (h *Workspace) fetchOrCreateHierarchy(projectName, regionName, stackName string) (*Project, *Region, *Stack) {
+	project := h.getOrCreateProject(projectName)
+	region := project.getOrCreateRegion(regionName)
+	stack := region.getOrCreateStack(stackName)
+	return project, region, stack
+}
+
+func (h *Workspace) getOrCreateProject(name string) *Project {
+	project, exists := h.Projects[name]
+	if !exists {
+		project = &Project{Regions: make(map[string]*Region)}
+		h.Projects[name] = project
+	}
+	return project
+}
+
+func (p *Project) getOrCreateRegion(name string) *Region {
+	region, exists := p.Regions[name]
+	if !exists {
+		region = &Region{Stacks: make(map[string]*Stack)}
+		p.Regions[name] = region
+	}
+	return region
+}
+
+func (r *Region) getOrCreateStack(name string) *Stack {
+	stack, exists := r.Stacks[name]
+	if !exists {
+		stack = &Stack{}
+		r.Stacks[name] = stack
+	}
+	return stack
+}
+
+func (h *Workspace) PrintHierarchy() {
+	for projectName, project := range h.Projects {
 		fmt.Printf("Project: %s\n", projectName)
 		for regionName, region := range project.Regions {
 			fmt.Printf("  Region: %s\n", regionName)
@@ -96,29 +120,21 @@ func (root *Root) PrintHierarchy() {
 	}
 }
 
-func GetProjects() (map[string]Project, error) {
-	root := Root{Projects: make(map[string]Project)}
-
+func GetWorkspace() (Workspace, error) {
+	root := Workspace{Projects: make(map[string]*Project)}
 	if len(os.Args) < 2 {
-		return nil, errors.New("Usage: program <root-directory>")
+		return Workspace{}, errors.New("Usage: program <root-directory>")
 	}
-
 	rootDir := os.Args[1]
 	fmt.Printf("rootDir: %s\n", rootDir)
-
 	terragruntFiles, err := getTerragruntFiles(rootDir)
 	if err != nil {
-		return nil, err
+		return Workspace{}, err
 	}
-
 	for _, file := range terragruntFiles {
 		root.addFileToHierarchy(file)
 	}
-
-	return root.Projects, nil
-
-	// Print the hierarchy
-	// root.PrintHierarchy() TODO: Improve debuggind adding this
+	return root, nil
 }
 
 func getTerragruntFiles(rootDir string) ([]string, error) {
@@ -138,8 +154,8 @@ func getTerragruntFiles(rootDir string) ([]string, error) {
 	return files, err
 }
 
-func getFileContent(file_path string) (string, error) {
-	content, err := ioutil.ReadFile(file_path)
+func getFileContent(filePath string) (string, error) {
+	content, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		fmt.Println(err)
 		return "", err
@@ -149,13 +165,56 @@ func getFileContent(file_path string) (string, error) {
 
 func RunTerraformInit(rootDir string) (string, error) {
 	cmd := exec.Command("terragrunt", "plan", "-reconfigure", "-terragrunt-forward-tf-stdout", "-terragrunt-non-interactive")
-	cmd.Dir = "/Users/caiofernandes/projects/prophecy/code/aws-prophecy-emite-infra/workspaces/prophecy-dev/ap-southeast-2/alb/emite-alb/"
+	cmd.Dir = rootDir
 	outputBytes, err := cmd.CombinedOutput()
-	// Save output to a file
 	outputFile := filepath.Join(cmd.Dir, "output")
 	if err := ioutil.WriteFile(outputFile, outputBytes, 0644); err != nil {
 		return string(outputBytes), fmt.Errorf("failed to save output to file: %v", err)
 	}
-
 	return string(outputBytes), err
+}
+
+func (h *Workspace) GetProjects() []string {
+	projectMap := make(map[string]struct{})
+	for project := range h.Projects {
+		projectMap[project] = struct{}{}
+	}
+
+	projects := make([]string, 0, len(projectMap))
+	for project := range projectMap {
+		projects = append(projects, project)
+	}
+	return projects
+}
+
+func (h *Workspace) GetRegions() []string {
+	regionMap := make(map[string]struct{})
+	for _, project := range h.Projects {
+		for region := range project.Regions {
+			regionMap[region] = struct{}{}
+		}
+	}
+
+	regions := make([]string, 0, len(regionMap))
+	for region := range regionMap {
+		regions = append(regions, region)
+	}
+	return regions
+}
+
+func (h *Workspace) GetStacks() []string {
+	stackMap := make(map[string]struct{})
+	for _, project := range h.Projects {
+		for _, region := range project.Regions {
+			for stack := range region.Stacks {
+				stackMap[stack] = struct{}{}
+			}
+		}
+	}
+
+	stacks := make([]string, 0, len(stackMap))
+	for stack := range stackMap {
+		stacks = append(stacks, stack)
+	}
+	return stacks
 }
