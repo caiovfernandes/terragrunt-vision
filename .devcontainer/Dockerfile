@@ -1,5 +1,5 @@
 # Base image with Go
-FROM golang:1.21
+FROM golang:1.23
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -15,11 +15,4 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
 
 # Set up Go environment
 ENV GO111MODULE=on
-
-# Set up the workspace directory
-WORKDIR /workspace
-
-# Set vscode user as the default user
-ARG USERNAME=devcontainer
-USER $USERNAME
 
