@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/caiovfernandes/terragrunt-runner/utils"
 )
 
 type File struct {
@@ -164,8 +166,21 @@ func getFileContent(filePath string) (string, error) {
 }
 
 func RunTerraformInit(rootDir string) (string, error) {
-	cmd := exec.Command("terragrunt", "plan", "-reconfigure", "-terragrunt-forward-tf-stdout", "-terragrunt-non-interactive")
-	cmd.Dir = rootDir
+	// Remove the last item from the path
+	parentDir := filepath.Dir(rootDir)
+	accessKeyID, secretAccessKey, sessionToken, err := utils.GetAwsCredentials()
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.Command("terragrunt", "init", "-reconfigure")
+	cmd.Env = append(os.Environ(),
+		"AWS_ACCESS_KEY_ID="+accessKeyID,
+		"AWS_SECRET_ACCESS_KEY="+secretAccessKey,
+		"AWS_SESSION_TOKEN="+sessionToken,
+	)
+	cmd.Dir = parentDir
+
 	outputBytes, err := cmd.CombinedOutput()
 	outputFile := filepath.Join(cmd.Dir, "output")
 	if err := ioutil.WriteFile(outputFile, outputBytes, 0644); err != nil {
