@@ -39,8 +39,10 @@ type Stack struct {
 	Files []File
 }
 
-const baseFolder = "workspaces"
-const minPathPartsLength = 4
+const (
+	baseFolder         = "workspaces"
+	minPathPartsLength = 4
+)
 
 func (h *Workspace) addFileToHierarchy(filePath string) {
 	pathParts, baseIndex := extractPathParts(filePath, baseFolder)
@@ -173,7 +175,7 @@ func RunTerraformInit(rootDir string) (string, error) {
 		return "", err
 	}
 
-	cmd := exec.Command("terragrunt", "init", "-reconfigure")
+	cmd := exec.Command("terragrunt", "plan")
 	cmd.Env = append(os.Environ(),
 		"AWS_ACCESS_KEY_ID="+accessKeyID,
 		"AWS_SECRET_ACCESS_KEY="+secretAccessKey,
@@ -186,7 +188,7 @@ func RunTerraformInit(rootDir string) (string, error) {
 	if err := ioutil.WriteFile(outputFile, outputBytes, 0644); err != nil {
 		return string(outputBytes), fmt.Errorf("failed to save output to file: %v", err)
 	}
-	return string(outputBytes), err
+	return string(outputBytes), nil
 }
 
 func (h *Workspace) GetProjects() []string {

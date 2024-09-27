@@ -13,22 +13,20 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var (
-	columnStyle  = lipgloss.NewStyle().Padding(1, 2)
-	focusedStyle = lipgloss.NewStyle().Padding(1, 2).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#FF00FF"))
-
-	models []tea.Model
-)
-
 const (
 	initialContent string = "# Terragrunt Runner"
 )
 
-var docStyle = lipgloss.NewStyle().Margin(1, 2)
-var choices = []string{"Taro", "Coffee", "Lychee"}
+var (
+	docStyle    = lipgloss.NewStyle().Margin(1, 2)
+	choices     = []string{"Taro", "Coffee", "Lychee"}
+	columnStyle = lipgloss.NewStyle()
+)
 
-type views int
-type status int
+type (
+	views  int
+	status int
+)
 
 const (
 	main views = iota
@@ -69,6 +67,8 @@ type Model struct {
 	regions          []string
 	projects         []string
 	stacks           []string
+
+	windowSize tea.WindowSizeMsg
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -104,13 +104,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case tea.WindowSizeMsg:
-			h, v := docStyle.GetFrameSize()
-			m.list.SetSize(msg.Width, msg.Height-v)
+			h, _ := docStyle.GetFrameSize()
+			m.windowSize = msg
+			m.list.SetSize(msg.Width, msg.Height)
 			m.codeViewPort.Height = msg.Height - h
 			m.tfViewPort.Height = msg.Height - h
 		case terraformInitMsg:
 			item := m.list.Items()[msg.Index].(Item)
-			item.lastExecution = "# Output:\n\n```shell" + msg.Output + "```\n # StdErr:\n " + msg.Error.Error() // Assuming we add a method to set this value
+			item.lastExecution = "# Output:\n\n```shell" + msg.Output // Assuming we add a method to set this value
 			m.list.SetItem(msg.Index, item)
 		}
 	case filter:
@@ -160,9 +161,13 @@ func (m *Model) View() string {
 		}
 		s.WriteString("\n(press q to quit)\n")
 
-		return s.String()
+		return lipgloss.PlaceHorizontal(50, lipgloss.Center, s.String())
 	}
 	if m.focused == main {
+		if m.isWindowSizeSet() {
+			m.list.SetSize(m.windowSize.Width, m.windowSize.Height)
+		}
+
 		currentItem := m.list.SelectedItem()
 		var codeStr string
 		var err error
@@ -175,7 +180,7 @@ func (m *Model) View() string {
 		m.codeViewPort.SetContent(codeStr)
 		m.tfViewPort.SetContent(tfRunStr)
 		return lipgloss.JoinHorizontal(
-			lipgloss.Center,
+			lipgloss.Left,
 			m.list.View(),
 			m.codeViewPort.View(),
 			m.tfViewPort.View(),
@@ -191,7 +196,7 @@ func (m *Model) UpdateListItems(filterCriteria Filter) {
 	if filterCriteria.region != "All" {
 		for _, item := range m.list.Items() {
 			i := item.(Item)
-			//if strings.Contains(i.description, filterCriteria.project) || strings.Contains(i.description, filterCriteria.region) || strings.Contains(i.title, filterCriteria.stack) {
+			// if strings.Contains(i.description, filterCriteria.project) || strings.Contains(i.description, filterCriteria.region) || strings.Contains(i.title, filterCriteria.stack) {
 			if strings.Contains(i.description, filterCriteria.region) {
 				filteredItems = append(filteredItems, i)
 			}
@@ -206,6 +211,10 @@ func (m *Model) next() {
 	} else {
 		m.focused++
 	}
+}
+
+func (m *Model) isWindowSizeSet() bool {
+	return m.windowSize.Width != 0 && m.windowSize.Height != 0
 }
 
 func newDefaultViewPort() (viewport.Model, *glamour.TermRenderer, error) {
@@ -270,6 +279,7 @@ func Start() {
 		projects:         append(workspace.GetProjects(), "All"),
 		stacks:           append(workspace.GetStacks(), "All"),
 	}
+
 	m.list.Title = "Terragrunt Files"
 	fmt.Println(m.stacks)
 	p := tea.NewProgram(&m, tea.WithAltScreen())
