@@ -4,4 +4,4 @@ build:
 	go build
 
 run:
-	./wrike-timesheet-cli
+	./main

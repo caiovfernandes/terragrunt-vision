@@ -111,8 +111,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tfViewPort.Height = msg.Height - h
 		case terraformInitMsg:
 			item := m.list.Items()[msg.Index].(Item)
-			item.lastExecution = "# Output:\n\n```shell" + msg.Output // Assuming we add a method to set this value
+			item.lastExecution = "# Output:\n\n```shell" + msg.Output + "\n```" // Assuming we add a method to set this value
 			m.list.SetItem(msg.Index, item)
+			m.tfViewPort.GotoBottom()
 		}
 	case filter:
 		switch msg := msg.(type) {
@@ -149,7 +150,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) View() string {
 	if m.focused == filter {
 		s := strings.Builder{}
-		s.WriteString("Account filter?\n\n")
+		s.WriteString("Account filter\n\n")
 		for i, region := range m.regions {
 			if m.cursor == i {
 				s.WriteString("(•) ")
@@ -172,6 +173,7 @@ func (m *Model) View() string {
 		var codeStr string
 		var err error
 		codeStr, err = m.viewportRenderer.Render(currentItem.(Item).content)
+
 		tfRunStr, err := m.viewportRenderer.Render(currentItem.(Item).lastExecution)
 		if err != nil {
 			fmt.Println(err)
@@ -179,6 +181,7 @@ func (m *Model) View() string {
 		}
 		m.codeViewPort.SetContent(codeStr)
 		m.tfViewPort.SetContent(tfRunStr)
+		m.tfViewPort.GotoBottom()
 		return lipgloss.JoinHorizontal(
 			lipgloss.Left,
 			m.list.View(),
@@ -300,6 +303,25 @@ type terraformInitMsg struct {
 func runTerraformInit(item Item, itemPosition int) tea.Cmd {
 	return func() tea.Msg {
 		output, err := terragrunt.RunTerraformInit(item.path)
+
+		saveStringToFile(output)
 		return terraformInitMsg{Output: output, Item: item, Index: itemPosition, Error: err}
+	}
+}
+
+func saveStringToFile(content string) {
+	// Create or open the file for writing
+	file, err := os.Create("output.txt")
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
+	defer file.Close()
+
+	// Write the content to the file
+	_, err = file.WriteString(content)
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }

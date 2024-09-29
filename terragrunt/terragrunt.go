@@ -175,7 +175,7 @@ func RunTerraformInit(rootDir string) (string, error) {
 		return "", err
 	}
 
-	cmd := exec.Command("terragrunt", "plan")
+	cmd := exec.Command("terragrunt", "init", "--terragrunt-forward-tf-stdout", "--no-color")
 	cmd.Env = append(os.Environ(),
 		"AWS_ACCESS_KEY_ID="+accessKeyID,
 		"AWS_SECRET_ACCESS_KEY="+secretAccessKey,
