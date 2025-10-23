@@ -168,14 +168,40 @@ func getFileContent(filePath string) (string, error) {
 }
 
 func RunTerraformInit(rootDir string) (string, error) {
-	// Remove the last item from the path
-	parentDir := filepath.Dir(rootDir)
+	return RunTerragruntCommand(rootDir, "init")
+}
+
+func RunTerragruntCommand(filePath string, command string) (string, error) {
+	// Get the directory containing the terragrunt.hcl file
+	parentDir := filepath.Dir(filePath)
+
+	// Get AWS credentials
 	accessKeyID, secretAccessKey, sessionToken, err := utils.GetAwsCredentials()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("failed to get AWS credentials: %v", err)
 	}
 
-	cmd := exec.Command("terragrunt", "init", "--terragrunt-forward-tf-stdout", "--no-color")
+	// Build the command arguments
+	args := []string{command}
+
+	// Add common flags
+	switch command {
+	case "init":
+		args = append(args, "--terragrunt-forward-tf-stdout", "--no-color")
+	case "plan":
+		args = append(args, "--terragrunt-forward-tf-stdout", "--no-color", "-out=tfplan")
+	case "apply":
+		args = append(args, "--terragrunt-forward-tf-stdout", "--no-color", "-auto-approve")
+	case "validate":
+		args = append(args, "--terragrunt-forward-tf-stdout", "--no-color")
+	case "destroy":
+		args = append(args, "--terragrunt-forward-tf-stdout", "--no-color", "-auto-approve")
+	default:
+		return "", fmt.Errorf("unsupported command: %s", command)
+	}
+
+	// Create the command
+	cmd := exec.Command("terragrunt", args...)
 	cmd.Env = append(os.Environ(),
 		"AWS_ACCESS_KEY_ID="+accessKeyID,
 		"AWS_SECRET_ACCESS_KEY="+secretAccessKey,
@@ -183,12 +209,23 @@ func RunTerraformInit(rootDir string) (string, error) {
 	)
 	cmd.Dir = parentDir
 
+	// Execute the command
 	outputBytes, err := cmd.CombinedOutput()
-	outputFile := filepath.Join(cmd.Dir, "output")
-	if err := ioutil.WriteFile(outputFile, outputBytes, 0644); err != nil {
-		return string(outputBytes), fmt.Errorf("failed to save output to file: %v", err)
+	output := string(outputBytes)
+
+	// Save output to a unique file
+	timestamp := filepath.Base(parentDir) + "_" + command
+	outputFile := filepath.Join(cmd.Dir, fmt.Sprintf("output_%s.txt", timestamp))
+	if writeErr := ioutil.WriteFile(outputFile, outputBytes, 0644); writeErr != nil {
+		// Don't fail the whole operation if we can't write the output file
+		output += fmt.Sprintf("\n\nWarning: failed to save output to file: %v", writeErr)
 	}
-	return string(outputBytes), nil
+
+	if err != nil {
+		return output, fmt.Errorf("command failed: %v", err)
+	}
+
+	return output, nil
 }
 
 func (h *Workspace) GetProjects() []string {

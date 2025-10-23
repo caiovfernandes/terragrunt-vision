@@ -1,0 +1,10 @@
+{
+  "aws_region": "us-east-2",
+  "aws_profile": "default",
+  "max_parallel_executions": 10,
+  "auto_approve": false,
+  "save_outputs": true,
+  "output_directory": "terragrunt-outputs",
+  "show_status_icons": true,
+  "color_scheme": "default"
+}
